@@ -1,0 +1,1134 @@
+'use client';
+
+import Image from 'next/image';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import FloFactionAIChatbot from '../../components/AIChatbot';
+import AdvancedInsurancePortal from '../../components/AdvancedInsurancePortal';
+import GuidesSection from '../../components/GuidesSection';
+import RetirementCalculators from '../../components/RetirementCalculators';
+import { FEATURED_CARRIERS, type Carrier as FeaturedCarrier } from '../../data/carriers';
+
+interface Carrier {
+  _id: string;
+  name: string;
+  logo: string;
+}
+
+export default function InsurancePage() {
+  const [carriers, setCarriers] = useState<Carrier[]>([]);
+  const [activeTab, setActiveTab] = useState('life');
+  const [showLiveChat, setShowLiveChat] = useState(false);
+  const [showAdvancedPortal, setShowAdvancedPortal] = useState(false);
+  const [showCalculators, setShowCalculators] = useState(false);
+  const [currentView, setCurrentView] = useState('overview');
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    insuranceType: '',
+    state: '',
+    coverageAmount: '',
+    ageRange: '',
+    healthStatus: ''
+  });
+  const [validationErrors, setValidationErrors] = useState<{[key: string]: string}>({});
+  const [aiRecommendations, setAiRecommendations] = useState<string>('');
+  const [estimatedPremium, setEstimatedPremium] = useState<number>(0);
+
+  useEffect(() => {
+    const curated = FEATURED_CARRIERS.map((c: FeaturedCarrier, idx) => ({
+      _id: String(idx + 1),
+      name: c.name,
+      logo: c.logo
+    }));
+    setCarriers(curated);
+
+    // PWA Install Prompt
+    let deferredPrompt: any;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const installPrompt = document.getElementById('pwa-install-prompt');
+      if (installPrompt) {
+        installPrompt.classList.remove('hidden');
+      }
+    });
+
+    const installBtn = document.getElementById('pwa-install-btn');
+    if (installBtn) {
+      installBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log(`User response to the install prompt: ${outcome}`);
+          deferredPrompt = null;
+          document.getElementById('pwa-install-prompt')?.classList.add('hidden');
+        }
+      });
+    }
+
+    // Mobile touch optimization
+    const handleTouchStart = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('hover:scale-105')) {
+        target.style.transform = 'scale(1.05)';
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('hover:scale-105')) {
+        target.style.transform = 'scale(1)';
+      }
+    };
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, []);
+
+  // Advanced Form Validation
+  const validateField = (field: string, value: string) => {
+    const errors = { ...validationErrors };
+
+    switch (field) {
+      case 'firstName':
+      case 'lastName':
+        if (!value.trim()) {
+          errors[field] = 'This field is required';
+        } else if (value.length < 2) {
+          errors[field] = 'Must be at least 2 characters';
+        } else {
+          delete errors[field];
+        }
+        break;
+      case 'email':
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!value.trim()) {
+          errors[field] = 'Email is required';
+        } else if (!emailRegex.test(value)) {
+          errors[field] = 'Please enter a valid email address';
+        } else {
+          delete errors[field];
+        }
+        break;
+      case 'phone':
+        const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+        if (!value.trim()) {
+          errors[field] = 'Phone number is required';
+        } else if (!phoneRegex.test(value.replace(/[\s\-\(\)]/g, ''))) {
+          errors[field] = 'Please enter a valid phone number';
+        } else {
+          delete errors[field];
+        }
+        break;
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // AI-Powered Recommendations
+  const generateAIRecommendations = (insuranceType: string, state: string, ageRange: string, healthStatus: string) => {
+    const recommendations = {
+      life: {
+        excellent: `Based on your excellent health status, we recommend term life insurance with competitive rates. Consider a 20-30 year term for maximum coverage at minimal cost.`,
+        good: `With good health, you qualify for preferred rates. We suggest a combination of term and whole life insurance for comprehensive protection.`,
+        fair: `Given your health status, we recommend guaranteed issue life insurance or simplified issue policies with no medical exam required.`,
+        poor: `We specialize in high-risk life insurance cases. Our carriers offer guaranteed acceptance policies with immediate coverage.`
+      },
+      health: {
+        excellent: `Your excellent health qualifies you for the lowest premium rates. Consider high-deductible plans with HSA options for maximum savings.`,
+        good: `Good health status allows for competitive rates. We recommend PPO plans with moderate deductibles for flexibility.`,
+        fair: `We can find health plans that accommodate your health status. Consider plans with comprehensive coverage and reasonable copays.`,
+        poor: `We specialize in finding health insurance for pre-existing conditions. Our carriers offer comprehensive coverage options.`
+      }
+    };
+
+    const typeRecs = recommendations[insuranceType as keyof typeof recommendations];
+    if (typeRecs) {
+      const healthRec = typeRecs[healthStatus as keyof typeof typeRecs] || 'We have specialized options for your situation.';
+      setAiRecommendations(healthRec);
+    }
+  };
+
+  // Real-time Premium Calculation
+  const calculatePremium = () => {
+    const baseRates = {
+      life: { '18-25': 25, '26-35': 35, '36-45': 50, '46-55': 75, '56-65': 120, '65+': 200 },
+      health: { '18-25': 200, '26-35': 250, '36-45': 300, '46-55': 400, '56-65': 600, '65+': 800 },
+      auto: { '18-25': 150, '26-35': 100, '36-45': 80, '46-55': 70, '56-65': 75, '65+': 90 }
+    };
+
+    const healthMultipliers = {
+      excellent: 0.8,
+      good: 1.0,
+      fair: 1.3,
+      poor: 1.8
+    };
+
+    const coverageMultipliers = {
+      '100k': 1.0,
+      '250k': 1.5,
+      '500k': 2.0,
+      '1m': 3.0,
+      '2m': 4.5
+    };
+
+    if (formData.insuranceType && formData.ageRange) {
+      const baseRate = baseRates[formData.insuranceType as keyof typeof baseRates]?.[formData.ageRange as keyof typeof baseRates.life] || 100;
+      const healthMultiplier = healthMultipliers[formData.healthStatus as keyof typeof healthMultipliers] || 1.0;
+      const coverageMultiplier = coverageMultipliers[formData.coverageAmount as keyof typeof coverageMultipliers] || 1.0;
+
+      const premium = Math.round(baseRate * healthMultiplier * coverageMultiplier);
+      setEstimatedPremium(premium);
+    }
+  };
+
+  // Handle form input changes
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    validateField(field, value);
+
+    if (field === 'insuranceType' || field === 'ageRange' || field === 'healthStatus') {
+      generateAIRecommendations(formData.insuranceType, formData.state, formData.ageRange, formData.healthStatus);
+    }
+
+    if (['insuranceType', 'ageRange', 'healthStatus', 'coverageAmount'].includes(field)) {
+      setTimeout(calculatePremium, 500);
+    }
+  };
+
+  // Handle form submission
+  const handleAdvancedQuoteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validate all required fields
+    const requiredFields = ['firstName', 'lastName', 'email', 'phone', 'insuranceType', 'state'];
+    let isValid = true;
+
+    requiredFields.forEach(field => {
+      if (!validateField(field, formData[field as keyof typeof formData])) {
+        isValid = false;
+      }
+    });
+
+    if (isValid) {
+      // Simulate quote generation and email sequence trigger
+      console.log('Generating quote for:', formData);
+
+      // Trigger automated email sequence
+      triggerEmailSequence(formData);
+
+      alert('Quote request submitted! Our AI will process your request and contact you within 24-48 hours.');
+    }
+  };
+
+  // Automated Email Sequence System
+  const triggerEmailSequence = (data: typeof formData) => {
+    const emailSequence = {
+      immediate: {
+        subject: `Welcome to Flo Faction - Your ${data.insuranceType} Quote is Being Processed`,
+        template: 'welcome_quote_request',
+        delay: 0
+      },
+      followUp1: {
+        subject: `Your Personalized ${data.insuranceType} Recommendations Are Ready`,
+        template: 'personalized_recommendations',
+        delay: 2 * 60 * 60 * 1000 // 2 hours
+      },
+      followUp2: {
+        subject: `Exclusive ${data.insuranceType} Savings - Limited Time Offer`,
+        template: 'exclusive_savings',
+        delay: 24 * 60 * 60 * 1000 // 24 hours
+      },
+      followUp3: {
+        subject: `Don't Miss Out - Your Quote Expires Soon`,
+        template: 'quote_expiration',
+        delay: 72 * 60 * 60 * 1000 // 72 hours
+      },
+      nurture1: {
+        subject: `Insurance Tips: How to Save Money on ${data.insuranceType}`,
+        template: 'insurance_tips',
+        delay: 7 * 24 * 60 * 60 * 1000 // 7 days
+      },
+      nurture2: {
+        subject: `Success Story: How We Saved Our Client $3,200 on ${data.insuranceType}`,
+        template: 'success_story',
+        delay: 14 * 24 * 60 * 60 * 1000 // 14 days
+      }
+    };
+
+    // Schedule email sequence
+    Object.entries(emailSequence).forEach(([key, email]) => {
+      setTimeout(() => {
+        console.log(`Sending ${key} email:`, email);
+        // In production, this would integrate with email service
+        sendAutomatedEmail(data.email, email.subject, email.template, data);
+      }, email.delay);
+    });
+
+    // Add to CRM for agent follow-up
+    addToCRM(data);
+  };
+
+  const sendAutomatedEmail = (email: string, subject: string, template: string, data: typeof formData) => {
+    // Simulate email sending
+    console.log(`📧 Sending email to ${email}: ${subject}`);
+    console.log(`Template: ${template}`, data);
+  };
+
+  const addToCRM = (data: typeof formData) => {
+    // Simulate CRM entry
+    console.log('📊 Adding to CRM:', {
+      lead: `${data.firstName} ${data.lastName}`,
+      email: data.email,
+      phone: data.phone,
+      insuranceType: data.insuranceType,
+      state: data.state,
+      timestamp: new Date().toISOString(),
+      status: 'new_lead',
+      priority: 'high'
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900">
+      {/* PWA Install Prompt */}
+      <div id="pwa-install-prompt" className="fixed top-0 left-0 right-0 bg-gradient-to-r from-green-500 to-blue-600 text-white p-3 text-center z-50 hidden">
+        <div className="flex items-center justify-between max-w-4xl mx-auto">
+          <span className="text-sm font-medium">📱 Install Flo Faction App for better experience</span>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => document.getElementById('pwa-install-prompt')?.classList.add('hidden')}
+              className="text-white hover:text-gray-200 text-sm"
+            >
+              Not now
+            </button>
+            <button
+              id="pwa-install-btn"
+              className="bg-white text-green-600 px-3 py-1 rounded text-sm font-medium hover:bg-gray-100"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Chatbot */}
+      <FloFactionAIChatbot className="fixed bottom-4 right-4 z-50" />
+
+      {/* Revolutionary Navigation */}
+      <nav className="fixed top-0 w-full z-40 bg-black/90 backdrop-blur-md border-b border-green-500/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-4">
+            <Link href="/" className="flex items-center space-x-4">
+              <div className="text-2xl font-bold text-white bg-gradient-to-r from-green-500 to-blue-600 px-3 py-1 rounded-lg">
+                🛡️ FF
+              </div>
+              <span className="text-white font-semibold text-lg">FLO FACTION</span>
+            </Link>
+
+            <div className="hidden md:flex items-center space-x-8">
+              <button
+                onClick={() => setCurrentView('overview')}
+                className={`transition-colors ${currentView === 'overview' ? 'text-green-400 font-semibold' : 'text-white hover:text-green-400'}`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setShowAdvancedPortal(true)}
+                className="text-white hover:text-green-400 transition-colors"
+              >
+                AI Portal
+              </button>
+              <button
+                onClick={() => setShowCalculators(true)}
+                className="text-white hover:text-green-400 transition-colors"
+              >
+                Calculators
+              </button>
+              <Link href="/guides" className="text-white hover:text-green-400 transition-colors">Guides</Link>
+              <Link href="/contact" className="text-white hover:text-green-400 transition-colors">Contact</Link>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <button className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:from-green-600 hover:to-blue-700 transition-all duration-300">
+                Get Quote
+              </button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Revolutionary Hero Section */}
+      <div className="pt-32 pb-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-black via-gray-900 to-black relative overflow-hidden">
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 via-blue-500/10 to-purple-500/10 animate-pulse"></div>
+        <div className="absolute top-20 left-10 w-20 h-20 bg-green-500/20 rounded-full blur-xl animate-bounce"></div>
+        <div className="absolute top-40 right-20 w-32 h-32 bg-blue-500/20 rounded-full blur-xl animate-pulse"></div>
+        <div className="absolute bottom-20 left-1/4 w-16 h-16 bg-purple-500/20 rounded-full blur-xl animate-bounce"></div>
+
+        <div className="max-w-7xl mx-auto text-center relative z-10">
+          <div className="inline-flex items-center bg-gradient-to-r from-green-500/20 to-blue-500/20 border border-green-500/30 rounded-full px-6 py-2 mb-6">
+            <span className="text-green-400 font-bold text-sm">🚀 REVOLUTIONARY AI PLATFORM</span>
+          </div>
+
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
+            <span className="bg-gradient-to-r from-green-400 via-blue-400 to-purple-400 bg-clip-text text-transparent">
+              The Future of
+            </span>
+            <br />
+            <span className="text-white">Insurance is Here</span>
+          </h1>
+
+          <p className="text-xl md:text-2xl text-gray-300 mb-8 max-w-4xl mx-auto leading-relaxed">
+            Experience the world's most advanced AI-powered insurance platform. Get instant quotes from 150+ carriers,
+            save up to 40% with our proprietary optimization engine, and enjoy 24/7 AI assistance.
+          </p>
+
+          {/* Revolutionary Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+            <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30 rounded-lg p-6 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-green-400 mb-2">150+</div>
+              <div className="text-white text-sm">A++ Rated Carriers</div>
+            </div>
+            <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 border border-blue-500/30 rounded-lg p-6 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-blue-400 mb-2">30s</div>
+              <div className="text-white text-sm">Instant Quotes</div>
+            </div>
+            <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 rounded-lg p-6 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-purple-400 mb-2">40%</div>
+              <div className="text-white text-sm">Average Savings</div>
+            </div>
+            <div className="bg-gradient-to-br from-orange-500/20 to-orange-600/20 border border-orange-500/30 rounded-lg p-6 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-orange-400 mb-2">99.9%</div>
+              <div className="text-white text-sm">Uptime Guarantee</div>
+            </div>
+          </div>
+
+          {/* Live Rate Ticker */}
+          <div className="bg-gradient-to-r from-green-500/20 to-blue-500/20 border border-green-500/30 rounded-xl p-6 mb-8 backdrop-blur-sm">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse mr-2"></div>
+              <span className="text-green-400 font-bold text-lg">🔥 LIVE RATES UPDATE</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
+              <div className="bg-black/30 rounded-lg p-4">
+                <div className="text-white mb-1">Term Life (35M)</div>
+                <div className="text-green-400 font-bold text-lg">$28/mo</div>
+                <div className="text-red-400 text-xs">↓15% from last week</div>
+              </div>
+              <div className="bg-black/30 rounded-lg p-4">
+                <div className="text-white mb-1">Whole Life (35F)</div>
+                <div className="text-green-400 font-bold text-lg">$85/mo</div>
+                <div className="text-red-400 text-xs">↓8% from last week</div>
+              </div>
+              <div className="bg-black/30 rounded-lg p-4">
+                <div className="text-white mb-1">Disability (40M)</div>
+                <div className="text-green-400 font-bold text-lg">$45/mo</div>
+                <div className="text-red-400 text-xs">↓12% from last week</div>
+              </div>
+            </div>
+          </div>
+
+          {/* CTA Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => setShowAdvancedPortal(true)}
+              className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:from-green-600 hover:to-blue-700 transition-all duration-300 shadow-lg hover:shadow-xl"
+            >
+              🚀 Launch AI Portal
+            </button>
+            <button
+              onClick={() => setShowCalculators(true)}
+              className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-white hover:text-black transition-all duration-300"
+            >
+              📊 Financial Calculators
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Vision Features Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-gray-900/50 to-black/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-full px-6 py-2 mb-6">
+              <span className="text-purple-400 font-bold text-sm">🤖 AI VISION TECHNOLOGY</span>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+              Revolutionary AI-Powered Insurance Features
+            </h2>
+            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+              Experience the future of insurance with our cutting-edge AI vision technology and advanced automation systems.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-green-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">📸</div>
+              <h3 className="text-xl font-bold text-white mb-4">Instant Damage Assessment</h3>
+              <p className="text-gray-300 mb-4">Upload photos for immediate AI analysis of property damage severity and repair cost estimates with 95% accuracy.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Real-time damage analysis</li>
+                <li>• Cost estimation algorithms</li>
+                <li>• Severity classification</li>
+                <li>• Instant claim processing</li>
+              </ul>
+            </div>
+
+            <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-blue-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">📄</div>
+              <h3 className="text-xl font-bold text-white mb-4">Document Processing</h3>
+              <p className="text-gray-300 mb-4">Automatic extraction of policy data, claims information, and coverage details from any document format.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• OCR text extraction</li>
+                <li>• Data validation</li>
+                <li>• Policy comparison</li>
+                <li>• Automated filing</li>
+              </ul>
+            </div>
+
+            <div className="bg-gradient-to-br from-red-500/10 to-orange-500/10 border border-red-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-red-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">🔍</div>
+              <h3 className="text-xl font-bold text-white mb-4">Fraud Detection</h3>
+              <p className="text-gray-300 mb-4">Advanced visual analysis identifies suspicious claims and document tampering with machine learning algorithms.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Pattern recognition</li>
+                <li>• Anomaly detection</li>
+                <li>• Risk scoring</li>
+                <li>• Real-time alerts</li>
+              </ul>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-purple-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">🏠</div>
+              <h3 className="text-xl font-bold text-white mb-4">Remote Inspection</h3>
+              <p className="text-gray-300 mb-4">Virtual property assessments using satellite imagery and user-submitted photos for instant coverage decisions.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Satellite imagery analysis</li>
+                <li>• 360° virtual tours</li>
+                <li>• Risk assessment</li>
+                <li>• Instant quotes</li>
+              </ul>
+            </div>
+
+            <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-yellow-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">✅</div>
+              <h3 className="text-xl font-bold text-white mb-4">Identity Verification</h3>
+              <p className="text-gray-300 mb-4">Secure ID document verification with authenticity checking and data extraction for instant onboarding.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Biometric verification</li>
+                <li>• Document authenticity</li>
+                <li>• Data extraction</li>
+                <li>• Compliance checking</li>
+              </ul>
+            </div>
+
+            <div className="bg-gradient-to-br from-green-500/10 to-teal-500/10 border border-green-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-green-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">⚡</div>
+              <h3 className="text-xl font-bold text-white mb-4">Instant Quotes</h3>
+              <p className="text-gray-300 mb-4">Real-time insurance quotes based on visual property assessment and AI-powered risk analysis.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Visual risk assessment</li>
+                <li>• Real-time pricing</li>
+                <li>• Multi-carrier comparison</li>
+                <li>• Instant approval</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Elements & Social Proof */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-gray-900/50 to-black/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-white mb-6">
+              🏆 Trusted by Thousands of Clients
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
+              <div className="text-center">
+                <div className="text-4xl font-bold text-green-400 mb-2">15+</div>
+                <div className="text-gray-300 text-sm">Years Experience</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-green-400 mb-2">10,000+</div>
+                <div className="text-gray-300 text-sm">Happy Clients</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-green-400 mb-2">150+</div>
+                <div className="text-gray-300 text-sm">Insurance Carriers</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-green-400 mb-2">$2.5B+</div>
+                <div className="text-gray-300 text-sm">Coverage Placed</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Client Testimonials */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-xl p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                  JS
+                </div>
+                <div className="ml-4">
+                  <div className="text-white font-semibold">John Smith</div>
+                  <div className="text-gray-400 text-sm">Business Owner</div>
+                </div>
+              </div>
+              <p className="text-gray-300 text-sm mb-4">
+                "Flo Faction saved me $3,200 annually on my business insurance. Their AI-powered system found coverage I didn't even know existed!"
+              </p>
+              <div className="flex text-yellow-400">
+                ⭐⭐⭐⭐⭐
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-xl p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                  MJ
+                </div>
+                <div className="ml-4">
+                  <div className="text-white font-semibold">Maria Johnson</div>
+                  <div className="text-gray-400 text-sm">Family of 4</div>
+                </div>
+              </div>
+              <p className="text-gray-300 text-sm mb-4">
+                "The 24-48 hour response time is incredible. Paul personally called me and explained everything in detail. Best insurance experience ever!"
+              </p>
+              <div className="flex text-yellow-400">
+                ⭐⭐⭐⭐⭐
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-xl p-6">
+              <div className="flex items-center mb-4">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                  RD
+                </div>
+                <div className="ml-4">
+                  <div className="text-white font-semibold">Robert Davis</div>
+                  <div className="text-gray-400 text-sm">Retiree</div>
+                </div>
+              </div>
+              <p className="text-gray-300 text-sm mb-4">
+                "Their retirement planning guides are comprehensive and the AI calculator helped me optimize my coverage perfectly. Highly recommended!"
+              </p>
+              <div className="flex text-yellow-400">
+                ⭐⭐⭐⭐⭐
+              </div>
+            </div>
+          </div>
+
+          {/* Certifications & Awards */}
+          <div className="text-center mb-12">
+            <h3 className="text-2xl font-bold text-white mb-8">🏅 Certifications & Awards</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <div className="text-2xl mb-2">🏆</div>
+                <div className="text-white text-sm font-semibold">Best Insurance Agency 2024</div>
+                <div className="text-gray-400 text-xs">Florida Business Journal</div>
+              </div>
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <div className="text-2xl mb-2">⭐</div>
+                <div className="text-white text-sm font-semibold">5-Star Rating</div>
+                <div className="text-gray-400 text-xs">Better Business Bureau</div>
+              </div>
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <div className="text-2xl mb-2">🔒</div>
+                <div className="text-white text-sm font-semibold">SOC 2 Certified</div>
+                <div className="text-gray-400 text-xs">Security Compliance</div>
+              </div>
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <div className="text-2xl mb-2">🎯</div>
+                <div className="text-white text-sm font-semibold">Top 1% Agent</div>
+                <div className="text-gray-400 text-xs">Industry Recognition</div>
+              </div>
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+                <div className="text-2xl mb-2">🤖</div>
+                <div className="text-white text-sm font-semibold">AI Innovation Award</div>
+                <div className="text-gray-400 text-xs">InsurTech Excellence</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Revolutionary Features */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-3xl font-bold text-white text-center mb-12">
+            🚀 Revolutionary Features
+          </h2>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+            <div className="bg-gradient-to-br from-green-900/50 to-blue-900/50 p-6 rounded-lg border border-green-500/30 hover:border-green-400 transition-all duration-300">
+              <div className="text-4xl mb-4">🤖</div>
+              <h3 className="text-xl font-semibold text-white mb-4">AI Quote Engine</h3>
+              <p className="text-gray-300 text-sm mb-4">Instant quotes from 150+ carriers with AI-powered rate optimization</p>
+              <div className="flex items-center text-green-400 text-sm">
+                <span className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>
+                Live Rate Updates
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 p-6 rounded-lg border border-purple-500/30 hover:border-purple-400 transition-all duration-300">
+              <div className="text-4xl mb-4">🎯</div>
+              <h3 className="text-xl font-semibold text-white mb-4">Smart Matching</h3>
+              <p className="text-gray-300 text-sm mb-4">AI matches you with the perfect agent based on your needs and location</p>
+              <div className="flex items-center text-purple-400 text-sm">
+                <span className="w-2 h-2 bg-purple-400 rounded-full mr-2 animate-pulse"></span>
+                Agent Assigned
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-blue-900/50 to-cyan-900/50 p-6 rounded-lg border border-blue-500/30 hover:border-blue-400 transition-all duration-300">
+              <div className="text-4xl mb-4">📊</div>
+              <h3 className="text-xl font-semibold text-white mb-4">Predictive Analytics</h3>
+              <p className="text-gray-300 text-sm mb-4">AI predicts your approval probability and suggests optimal coverage</p>
+              <div className="flex items-center text-blue-400 text-sm">
+                <span className="w-2 h-2 bg-blue-400 rounded-full mr-2 animate-pulse"></span>
+                95% Accuracy Rate
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-orange-900/50 to-red-900/50 p-6 rounded-lg border border-orange-500/30 hover:border-orange-400 transition-all duration-300">
+              <div className="text-4xl mb-4">🔍</div>
+              <h3 className="text-xl font-semibold text-white mb-4">Fraud Detection</h3>
+              <p className="text-gray-300 text-sm mb-4">Advanced AI detects and prevents fraudulent applications in real-time</p>
+              <div className="flex items-center text-orange-400 text-sm">
+                <span className="w-2 h-2 bg-orange-400 rounded-full mr-2 animate-pulse"></span>
+                Real-time Scanning
+              </div>
+            </div>
+          </div>
+
+          {/* AI-Powered Features Showcase */}
+          <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700 rounded-xl p-8 mb-16">
+            <h3 className="text-2xl font-bold text-white mb-8 text-center">🧠 AI-Powered Intelligence</h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div>
+                <h4 className="text-xl font-semibold text-white mb-4">🎯 Personalized Recommendations</h4>
+                <ul className="space-y-3 text-gray-300">
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                    Coverage optimization based on your lifestyle
+                  </li>
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                    Risk assessment using advanced algorithms
+                  </li>
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                    Premium prediction with 95% accuracy
+                  </li>
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                    Carrier matching based on approval probability
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="text-xl font-semibold text-white mb-4">⚡ Real-time Processing</h4>
+                <ul className="space-y-3 text-gray-300">
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-3"></span>
+                    Instant quote generation in under 30 seconds
+                  </li>
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-3"></span>
+                    Live rate monitoring across all carriers
+                  </li>
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-3"></span>
+                    Automated document processing and verification
+                  </li>
+                  <li className="flex items-center">
+                    <span className="w-2 h-2 bg-blue-400 rounded-full mr-3"></span>
+                    Smart form completion with auto-suggestions
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+              <p className="text-gray-300 mb-4">Get instant quotes from 150+ carriers in under 30 seconds.</p>
+              <div className="bg-green-500/20 p-3 rounded-lg">
+                <div className="text-green-400 font-bold">Average Savings: 32%</div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 p-6 rounded-lg border border-purple-500/30 hover:border-purple-400 transition-all duration-300">
+              <div className="text-4xl mb-4">⚡</div>
+              <h3 className="text-xl font-semibold text-white mb-4">Instant Approval</h3>
+              <p className="text-gray-300 mb-4">Get approved in minutes, not weeks. 10x faster than competitors.</p>
+              <div className="bg-purple-500/20 p-3 rounded-lg">
+                <div className="text-purple-400 font-bold">Approval Time: 5 minutes</div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-yellow-900/50 to-orange-900/50 p-6 rounded-lg border border-yellow-500/30 hover:border-yellow-400 transition-all duration-300">
+              <div className="text-4xl mb-4">🎯</div>
+              <h3 className="text-xl font-semibold text-white mb-4">Smart Matching</h3>
+              <p className="text-gray-300 mb-4">AI matches you with the perfect carrier based on your profile.</p>
+              <div className="bg-yellow-500/20 p-3 rounded-lg">
+                <div className="text-yellow-400 font-bold">Match Accuracy: 98.7%</div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-red-900/50 to-pink-900/50 p-6 rounded-lg border border-red-500/30 hover:border-red-400 transition-all duration-300">
+              <div className="text-4xl mb-4">🛡️</div>
+              <h3 className="text-xl font-semibold text-white mb-4">Fraud Protection</h3>
+              <p className="text-gray-300 mb-4">Military-grade security ensures your coverage is always protected.</p>
+              <div className="bg-red-500/20 p-3 rounded-lg">
+                <div className="text-red-400 font-bold">Protection: Military Grade</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Insurance Services Tabs */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-3xl font-bold text-white text-center mb-12">
+            🎯 Comprehensive Insurance Solutions
+          </h2>
+
+          {/* Tab Navigation */}
+          <div className="flex flex-wrap justify-center mb-8 space-x-2">
+            {[
+              { id: 'life', label: '💖 Life Insurance' },
+              { id: 'health', label: '🏥 Health Insurance' },
+              { id: 'disability', label: '🦽 Disability Insurance' },
+              { id: 'business', label: '🏢 Business Insurance' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-6 py-3 rounded-lg font-semibold transition-all duration-300 ${
+                  activeTab === tab.id
+                    ? 'bg-gradient-to-r from-green-500 to-blue-600 text-white shadow-lg'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab Content */}
+          <div className="bg-gradient-to-br from-gray-900/80 to-black/80 p-8 rounded-lg border border-green-500/30">
+            {activeTab === 'life' && (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[
+                  {
+                    title: 'Term Life Insurance',
+                    description: 'Affordable protection for specific periods',
+                    features: ['No medical exam options', 'Convertible to permanent', 'Level premiums'],
+                    startingPrice: '$15/mo',
+                    popular: true
+                  },
+                  {
+                    title: 'Whole Life Insurance',
+                    description: 'Permanent coverage with cash value',
+                    features: ['Guaranteed cash value', 'Fixed premiums', 'Dividend potential'],
+                    startingPrice: '$75/mo',
+                    popular: false
+                  },
+                  {
+                    title: 'Universal Life Insurance',
+                    description: 'Flexible permanent coverage',
+                    features: ['Adjustable premiums', 'Investment options', 'Death benefit flexibility'],
+                    startingPrice: '$95/mo',
+                    popular: false
+                  }
+                ].map((product, index) => (
+                  <div key={index} className={`bg-gradient-to-br from-red-900/30 to-pink-900/30 p-6 rounded-lg border ${product.popular ? 'border-yellow-500' : 'border-red-500/30'} relative`}>
+                    {product.popular && (
+                      <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-black px-4 py-1 rounded-full text-sm font-bold">
+                        MOST POPULAR
+                      </div>
+                    )}
+                    <h3 className="text-xl font-semibold text-white mb-3">{product.title}</h3>
+                    <p className="text-gray-300 mb-4">{product.description}</p>
+                    <div className="text-2xl font-bold text-red-400 mb-4">Starting at {product.startingPrice}</div>
+                    <ul className="space-y-2 mb-6">
+                      {product.features.map((feature, idx) => (
+                        <li key={idx} className="flex items-center text-sm text-gray-300">
+                          <span className="text-red-400 mr-2">✓</span>
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                    <button className="w-full bg-gradient-to-r from-red-500 to-pink-600 text-white py-2 px-4 rounded-lg font-semibold hover:from-red-600 hover:to-pink-700 transition-all duration-300">
+                      Get Quote
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <GuidesSection />
+
+      {/* Our Carriers */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-3xl font-bold text-white text-center mb-12">
+            🤝 Our Premium Carrier Network
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+            {carriers.map((carrier, index) => (
+              <div key={carrier._id} className="flex justify-center items-center bg-gray-800 p-4 rounded-lg hover:bg-gray-700 transition-all duration-300">
+                <Image src={carrier.logo} alt={carrier.name} width={64} height={64} className="h-16" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Customer Onboarding & Support Section */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-gray-900/50 to-black/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <div className="inline-flex items-center bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-blue-500/30 rounded-full px-6 py-2 mb-6">
+              <span className="text-blue-400 font-bold text-sm">🎯 COMPREHENSIVE CUSTOMER EXPERIENCE</span>
+            </div>
+            <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+              Complete Customer Journey Management
+            </h2>
+            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+              From initial contact to policy management, we provide comprehensive support at every step of your insurance journey.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+            {/* Client Onboarding */}
+            <div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-green-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">📋</div>
+              <h3 className="text-xl font-bold text-white mb-4">Smart Client Onboarding</h3>
+              <p className="text-gray-300 mb-4">Comprehensive onboarding checklist with automated verification and preparation tracking.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Legal compliance verification</li>
+                <li>• Service-specific requirements</li>
+                <li>• Document collection automation</li>
+                <li>• Timeline expectation setting</li>
+                <li>• Communication plan establishment</li>
+              </ul>
+            </div>
+
+            {/* Appointment Booking */}
+            <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-purple-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">📅</div>
+              <h3 className="text-xl font-bold text-white mb-4">Intelligent Appointment Booking</h3>
+              <p className="text-gray-300 mb-4">Advanced calendar integration with automated scheduling and confirmation systems.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Real-time availability checking</li>
+                <li>• Automated confirmation emails</li>
+                <li>• SMS reminders and updates</li>
+                <li>• Rescheduling capabilities</li>
+                <li>• Video consultation options</li>
+              </ul>
+            </div>
+
+            {/* Customer Database */}
+            <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-blue-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">🗄️</div>
+              <h3 className="text-xl font-bold text-white mb-4">Advanced Customer Database</h3>
+              <p className="text-gray-300 mb-4">Comprehensive customer management with tracking, analytics, and relationship management.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• User authentication system</li>
+                <li>• Policy and quote tracking</li>
+                <li>• Interaction history logging</li>
+                <li>• Preference management</li>
+                <li>• Automated follow-up scheduling</li>
+              </ul>
+            </div>
+
+            {/* Payment Processing */}
+            <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-yellow-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">💳</div>
+              <h3 className="text-xl font-bold text-white mb-4">Multi-Payment Processing</h3>
+              <p className="text-gray-300 mb-4">Secure payment processing with multiple options and automated billing management.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• PayPal integration</li>
+                <li>• Apple Pay & Google Pay</li>
+                <li>• Credit card processing</li>
+                <li>• Automated billing cycles</li>
+                <li>• Payment confirmation emails</li>
+              </ul>
+            </div>
+
+            {/* 24/7 Support */}
+            <div className="bg-gradient-to-br from-red-500/10 to-pink-500/10 border border-red-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-red-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">🆘</div>
+              <h3 className="text-xl font-bold text-white mb-4">24/7 Customer Support</h3>
+              <p className="text-gray-300 mb-4">Comprehensive support system with multiple contact methods and AI-powered assistance.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• AI-powered chatbot support</li>
+                <li>• Live chat with human agents</li>
+                <li>• Phone support hotlines</li>
+                <li>• Email ticket system</li>
+                <li>• Emergency contact options</li>
+              </ul>
+            </div>
+
+            {/* Sales Funnel */}
+            <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/30 rounded-xl p-8 backdrop-blur-sm hover:border-indigo-400/50 transition-all duration-300">
+              <div className="text-4xl mb-4">🎯</div>
+              <h3 className="text-xl font-bold text-white mb-4">Advanced Sales Funnel</h3>
+              <p className="text-gray-300 mb-4">Complete sales funnel with lead magnets, upsells, and conversion optimization.</p>
+              <ul className="text-sm text-gray-400 space-y-2">
+                <li>• Free guide lead magnets</li>
+                <li>• Progressive product offers</li>
+                <li>• Countdown timer urgency</li>
+                <li>• Upsell and cross-sell automation</li>
+                <li>• Conversion tracking analytics</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Customer Analytics & Retention */}
+      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-black/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold text-white mb-6">Customer Analytics & Retention</h2>
+            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
+              Advanced analytics and retention systems to ensure every customer receives personalized attention and optimal service.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* Analytics Dashboard */}
+            <div className="bg-gradient-to-br from-green-500/10 to-blue-500/10 border border-green-500/30 rounded-xl p-8 backdrop-blur-sm">
+              <h3 className="text-2xl font-bold text-white mb-6">📊 Customer Analytics Dashboard</h3>
+              <div className="space-y-4">
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-green-400 font-bold text-lg">Customer Lifetime Value Tracking</div>
+                  <div className="text-gray-300 text-sm">Monitor customer value and optimize service delivery</div>
+                </div>
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-blue-400 font-bold text-lg">Interaction History Analysis</div>
+                  <div className="text-gray-300 text-sm">Track all customer touchpoints and preferences</div>
+                </div>
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-purple-400 font-bold text-lg">Conversion Funnel Analytics</div>
+                  <div className="text-gray-300 text-sm">Optimize conversion rates at every step</div>
+                </div>
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-orange-400 font-bold text-lg">Real-time Performance Metrics</div>
+                  <div className="text-gray-300 text-sm">Live tracking of customer satisfaction and engagement</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Retention System */}
+            <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-xl p-8 backdrop-blur-sm">
+              <h3 className="text-2xl font-bold text-white mb-6">🔄 Customer Retention System</h3>
+              <div className="space-y-4">
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-purple-400 font-bold text-lg">Automated Follow-up Sequences</div>
+                  <div className="text-gray-300 text-sm">Personalized follow-up campaigns based on customer behavior</div>
+                </div>
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-pink-400 font-bold text-lg">Loyalty Program Integration</div>
+                  <div className="text-gray-300 text-sm">Reward long-term customers with exclusive benefits</div>
+                </div>
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-blue-400 font-bold text-lg">Churn Prediction & Prevention</div>
+                  <div className="text-gray-300 text-sm">AI-powered early warning system for at-risk customers</div>
+                </div>
+                <div className="bg-black/30 rounded-lg p-4">
+                  <div className="text-green-400 font-bold text-lg">Personalized Service Recommendations</div>
+                  <div className="text-gray-300 text-sm">AI-driven suggestions for additional coverage and services</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact Section */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-black/50">
+        <div className="max-w-7xl mx-auto text-center">
+          <h2 className="text-3xl font-bold text-white mb-12">Get Started Today</h2>
+
+          <div className="bg-gradient-to-br from-green-900/50 to-blue-900/50 p-8 rounded-lg border border-green-500/30">
+            <h3 className="text-2xl font-semibold text-white mb-6">Ready for Your Free Quote?</h3>
+            <p className="text-gray-300 mb-8 max-w-2xl mx-auto">
+              Get personalized insurance quotes in 30 seconds. Our AI finds the best rates from 150+ carriers.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button className="bg-gradient-to-r from-green-500 to-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-blue-700 transition-all duration-300">
+                🚀 Get Instant Quote
+              </button>
+              <a href="/guides" className="bg-gradient-to-r from-purple-500 to-pink-600 text-white px-8 py-3 rounded-lg font-semibold hover:from-purple-600 hover:to-pink-700 transition-all duration-300 inline-block">
+                📚 Financial Planning Guides
+              </a>
+              <button className="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-black transition-all duration-300">
+                📞 Call (772) 208-9646
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Advanced Insurance Portal Modal */}
+      {showAdvancedPortal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-4 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-white">🚀 Advanced AI Insurance Portal</h2>
+              <button
+                onClick={() => setShowAdvancedPortal(false)}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6">
+              <AdvancedInsurancePortal />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Financial Calculators Modal */}
+      {showCalculators && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-4 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-white">📊 Financial Planning Calculators</h2>
+              <button
+                onClick={() => setShowCalculators(false)}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6">
+              <RetirementCalculators />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
